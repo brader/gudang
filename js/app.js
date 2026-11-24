@@ -124,7 +124,7 @@ function renderNav() {
   document.getElementById('nav').innerHTML = NAV
     .filter(n => !n.admin || isAdmin())
     .map(n => `<div class="nav-item" data-page="${n.page}" onclick="navigate('${n.page}')"><span>${n.icon}</span><span>${n.label}</span></div>`)
-    .join('');
+    .join('') + `<a class="nav-item" href="scan/" style="color:inherit;text-decoration:none"><span>📷</span><span>Scan HP</span></a>`;
 }
 
 function navigate(page, param) {

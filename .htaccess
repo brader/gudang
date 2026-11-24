@@ -1,4 +1,5 @@
 DirectoryIndex index.html
+AddType application/manifest+json .webmanifest
 
 <IfModule mod_rewrite.c>
   RewriteEngine On

@@ -1,0 +1,15 @@
+{
+  "name": "RakStok Scan",
+  "short_name": "Scan Gudang",
+  "description": "Scan rak dan barang untuk transaksi, cek stok, dan stok opname",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

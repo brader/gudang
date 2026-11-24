@@ -10,6 +10,11 @@ PHP 8.1+ native + MySQL/MariaDB, bisa dipasang di cPanel shared hosting.
 4. Setelah berhasil, **hapus `install.php`** lewat File Manager.
 5. Pastikan ekstensi PHP `pdo_mysql`, `curl`, `zip` aktif (cPanel → Select PHP Version → Extensions).
 
+## Scan pakai HP (PWA)
+Buka `https://domain-anda/gudang/scan/` di HP (atau menu **📷 Scan HP** di aplikasi), login, lalu
+**Tambahkan ke Layar Utama** (Chrome: menu ⋮ → Install app; Safari: Bagikan → Add to Home Screen).
+Mode: Cek, Masuk, Keluar, Pindah, Opname. Kamera hanya jalan di **https**.
+
 ## Update otomatis dari GitHub
 Menu **Pengaturan → Update Aplikasi** (khusus admin):
 1. Buka *Pengaturan sumber update*, isi repo (`brader/gudang`), branch (`main`), dan **token GitHub**.
