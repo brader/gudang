@@ -1,0 +1,8 @@
+api/config.php
+.DS_Store
+*.zip
+storage/error.log
+storage/backups/*
+!storage/backups/.gitkeep
+rakstok-upload/
+DEV-ACCOUNTS.md
