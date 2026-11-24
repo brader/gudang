@@ -19,7 +19,7 @@ AddType application/manifest+json .webmanifest
 </FilesMatch>
 
 <IfModule mod_headers.c>
-  <FilesMatch "^index\.html$">
+  <FilesMatch "(^index\.html|\.js|\.css|\.webmanifest)$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
