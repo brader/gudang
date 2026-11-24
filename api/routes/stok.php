@@ -88,9 +88,10 @@ route('GET', '/dashboard', function () {
         'jml_lokasi' => (int)val('SELECT COUNT(*) FROM lokasi WHERE aktif = 1'),
         'lokasi_terisi' => (int)val('SELECT COUNT(DISTINCT lokasi_id) FROM stok WHERE qty > 0'),
         'hari_ini' => rows('SELECT jenis, COUNT(*) n FROM mutasi WHERE tanggal = ? GROUP BY jenis', [$today]),
-        'menipis' => rows('SELECT b.id, b.sku, b.nama, b.satuan, b.stok_min, COALESCE(SUM(s.qty), 0) total
-            FROM barang b LEFT JOIN stok s ON s.barang_id = b.id
-            WHERE b.aktif = 1 AND b.stok_min > 0 GROUP BY b.id HAVING total < b.stok_min ORDER BY total / b.stok_min LIMIT 20'),
+        'menipis' => rows('SELECT b.id, b.sku, b.nama, b.satuan, b.stok_min, COALESCE(t.total, 0) AS total
+            FROM barang b LEFT JOIN (SELECT barang_id, SUM(qty) AS total FROM stok GROUP BY barang_id) t ON t.barang_id = b.id
+            WHERE b.aktif = 1 AND b.stok_min > 0 AND COALESCE(t.total, 0) < b.stok_min
+            ORDER BY COALESCE(t.total, 0) / b.stok_min LIMIT 20'),
         'opname_aktif' => rows("SELECT id, kode, tanggal, cakupan FROM opname WHERE status = 'hitung' ORDER BY id DESC"),
         'terakhir' => rows(mutasi_sql('1=1') . ' LIMIT 10'),
     ];
