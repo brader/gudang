@@ -33,7 +33,7 @@ route('GET', '/meta', function () {
     auth();
     return [
         'company_name' => setting('company_name', 'RakStok'),
-        'version' => substr(current_version()['commit'], 0, 7),
+        'version' => current_version()['version'] ? 'v' . current_version()['version'] : substr(current_version()['commit'], 0, 7),
         'peran' => PERAN,
         'kategori' => array_column(rows('SELECT DISTINCT kategori FROM barang WHERE kategori IS NOT NULL ORDER BY kategori'), 'kategori'),
         'satuan' => array_values(array_unique(array_merge(['pcs', 'box', 'karton', 'kg', 'liter', 'roll'],

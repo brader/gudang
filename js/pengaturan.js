@@ -59,11 +59,14 @@ async function saveSettings(btn) {
 let UPDATE_INFO = null;
 
 function shortSha(c) { return c ? c.slice(0, 7) : ''; }
+function verLabel(v) { return v.version ? 'v' + v.version : shortSha(v.commit); }
 
 async function checkUpdateBadge() {
   try {
     const r = await api('/system/update/status');
-    document.getElementById('update-btn').style.display = r.available ? '' : 'none';
+    const b = document.getElementById('update-btn');
+    b.style.display = r.available ? '' : 'none';
+    b.textContent = '⬆ Update' + (r.version ? ' v' + r.version : '');
   } catch {}
 }
 
@@ -75,13 +78,13 @@ async function renderUpdateCard(check = null) {
   const last = check || d.last_check;
   const req = d.requirements;
   const reqOk = req.curl && req.zip && req.writable;
-  const cur = d.current.commit ? `<b>${shortSha(d.current.commit)}</b>${d.current.date ? ' · ' + fmtDateTime(d.current.date) : ''}` : '<b>tidak diketahui</b> <span style="color:var(--muted)">(versi lama / development)</span>';
+  const cur = d.current.commit || d.current.version ? `<b>${verLabel(d.current)}</b>${d.current.commit && d.current.version ? ` <span style="color:var(--muted)">(${shortSha(d.current.commit)})</span>` : ''}${d.current.date ? ' · ' + fmtDateTime(d.current.date) : ''}` : '<b>tidak diketahui</b> <span style="color:var(--muted)">(versi lama / development)</span>';
 
   let status = '';
   if (last) {
     status = last.available
       ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-top:12px">
-          <div style="font-weight:700;margin-bottom:6px">Update tersedia: ${shortSha(last.latest.commit)}${last.behind ? ` · ${last.behind} perubahan` : ''}</div>
+          <div style="font-weight:700;margin-bottom:6px">Update tersedia: ${verLabel(last.latest)}${last.behind ? ` · ${last.behind} perubahan` : ''}</div>
           ${last.changes?.length ? `<ul style="margin:0 0 10px 18px;font-size:13px">${last.changes.map(c => `<li>${escHtml(c.message)} <span style="color:var(--muted)">(${fmtDate(c.date)})</span></li>`).join('')}</ul>`
             : `<div style="font-size:13px;margin-bottom:10px">${escHtml(last.latest.message || '')}</div>`}
           <button class="btn btn-p" ${reqOk ? '' : 'disabled'} onclick="applyUpdate('${last.latest.commit}', this)">Update Sekarang</button>
@@ -132,7 +135,7 @@ async function applyUpdate(commit, btn) {
   if (!confirm('Update aplikasi sekarang? Selama proses (± 1 menit) sebaiknya user lain tidak menyimpan data.')) return;
   try {
     const r = await withBtn(btn, () => api('/system/update/apply', 'POST', { commit }));
-    toast(`Update berhasil: ${r.files} file diperbarui${r.migrations.length ? `, ${r.migrations.length} perubahan database` : ''}. Memuat ulang...`);
+    toast(`Update ke ${r.version ? 'v' + r.version : shortSha(r.commit)} berhasil: ${r.files} file diperbarui${r.migrations.length ? `, ${r.migrations.length} perubahan database` : ''}. Memuat ulang...`);
     setTimeout(() => location.reload(), 1500);
   } catch (e) { toast(e.message, true); }
 }

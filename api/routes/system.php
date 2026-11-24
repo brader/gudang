@@ -22,7 +22,18 @@ function current_version(): array
     $f = app_root() . '/api/version.php';
     $v = is_file($f) ? (include $f) : [];
     $commit = is_array($v) && preg_match('/^[0-9a-f]{40}$/', (string)($v['commit'] ?? '')) ? $v['commit'] : '';
-    return ['commit' => $commit, 'date' => $commit ? ($v['date'] ?? null) : null];
+    $ver = trim((string)@file_get_contents(app_root() . '/VERSION'));
+    return ['commit' => $commit, 'date' => $commit ? ($v['date'] ?? null) : null, 'version' => valid_ver($ver) ? $ver : ''];
+}
+
+function valid_ver(?string $v): bool { return (bool)preg_match('/^\d+(\.\d+){1,2}$/', (string)$v); }
+
+// Ada update jika versi di GitHub lebih tinggi. Jika salah satu versi tidak diketahui, bandingkan commit.
+function update_available(array $cur, array $latest): bool
+{
+    if (($latest['commit'] ?? '') === '' || $latest['commit'] === $cur['commit']) return false;
+    if (valid_ver($cur['version'] ?? '') && valid_ver($latest['version'] ?? '')) return version_compare($latest['version'], $cur['version'], '>');
+    return true;
 }
 
 function write_version(string $commit, ?string $date): void
@@ -63,17 +74,24 @@ function check_update(): array
     $latest = github("/repos/{$s['repo']}/commits/" . rawurlencode($s['branch']));
     $sha = $latest['sha'] ?? '';
     if (!preg_match('/^[0-9a-f]{40}$/', $sha)) fail('Balasan GitHub tidak dikenali');
+    $ver = '';
+    try {
+        $vf = github("/repos/{$s['repo']}/contents/VERSION?ref=$sha");
+        $ver = trim((string)base64_decode((string)($vf['content'] ?? '')));
+    } catch (ApiError $e) {}
     $res = [
         'latest' => [
             'commit' => $sha,
+            'version' => valid_ver($ver) ? $ver : '',
             'date' => $latest['commit']['committer']['date'] ?? null,
             'message' => strtok((string)($latest['commit']['message'] ?? ''), "\n"),
         ],
-        'available' => $cur['commit'] !== $sha,
+        'available' => false,
         'behind' => null,
         'changes' => [],
         'checked_at' => date('Y-m-d H:i:s'),
     ];
+    $res['available'] = update_available($cur, $res['latest']);
     if ($res['available'] && $cur['commit']) {
         $cmp = github("/repos/{$s['repo']}/compare/{$cur['commit']}...$sha");
         $res['behind'] = (int)($cmp['ahead_by'] ?? 0);
@@ -215,7 +233,7 @@ function apply_update(string $sha): array
     $backups = list_backups();
     foreach (array_slice($backups, UPDATE_KEEP_BACKUPS) as $old) @unlink(backup_dir() . '/' . $old['file']);
     q("DELETE FROM settings WHERE k = 'update_check'");
-    return ['ok' => true, 'commit' => $sha, 'files' => count($contents), 'migrations' => $migrations, 'backup' => $backupName];
+    return ['ok' => true, 'commit' => $sha, 'version' => current_version()['version'], 'files' => count($contents), 'migrations' => $migrations, 'backup' => $backupName];
 }
 
 route('GET', '/system/update', function () {
@@ -243,8 +261,8 @@ route('GET', '/system/update/status', function () {
     if (!$last || strtotime($last['checked_at'] ?? '2000-01-01') < time() - 6 * 3600) {
         try { $last = check_update(); } catch (Throwable $e) { return ['available' => false]; }
     }
-    $available = ($last['latest']['commit'] ?? '') !== '' && $last['latest']['commit'] !== current_version()['commit'];
-    return ['available' => $available, 'behind' => $last['behind'] ?? null];
+    $available = update_available(current_version(), $last['latest'] ?? []);
+    return ['available' => $available, 'version' => $last['latest']['version'] ?? '', 'behind' => $last['behind'] ?? null];
 });
 
 route('POST', '/system/update/check', function () {

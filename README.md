@@ -20,6 +20,10 @@ Menu **Pengaturan → Update Aplikasi** (khusus admin):
 File yang tidak pernah ditimpa update: `api/config.php`, `install.php`, folder `storage/`.
 Token disimpan di database server, tidak pernah dikirim ke browser.
 
+## Penomoran versi
+Versi ada di file `VERSION` (mis. `1.2`) dan tampil sebagai **v1.2** di aplikasi. Setiap rilis: naikkan `VERSION`
+(1.2 → 1.3 → …), commit, beri tag `v1.3`, lalu push. Updater hanya menawarkan update jika versi di GitHub lebih tinggi.
+
 ## Membuat paket upload
 ```bash
 git archive --format=zip -o rakstok-upload.zip HEAD
