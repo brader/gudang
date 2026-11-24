@@ -38,7 +38,8 @@ route('GET', '/meta', function () {
         'kategori' => array_column(rows('SELECT DISTINCT kategori FROM barang WHERE kategori IS NOT NULL ORDER BY kategori'), 'kategori'),
         'satuan' => array_values(array_unique(array_merge(['pcs', 'box', 'karton', 'kg', 'liter', 'roll'],
             array_column(rows('SELECT DISTINCT satuan FROM barang ORDER BY satuan'), 'satuan')))),
-        'rak' => array_column(rows('SELECT DISTINCT rak FROM lokasi WHERE aktif = 1 ORDER BY rak'), 'rak'),
+        'rak' => rows('SELECT DISTINCT gudang_id, rak FROM lokasi WHERE aktif = 1 ORDER BY gudang_id, rak'),
+        'gudang' => rows('SELECT id, nama, awalan, aktif FROM gudang ORDER BY id'),
     ];
 });
 

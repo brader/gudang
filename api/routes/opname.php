@@ -2,7 +2,7 @@
 
 function opname_get(int $id): array
 {
-    $o = row('SELECT o.*, u.nama AS dibuat_nama, u2.nama AS selesai_nama FROM opname o
+    $o = row('SELECT o.*, g.nama AS gudang, u.nama AS dibuat_nama, u2.nama AS selesai_nama FROM opname o JOIN gudang g ON g.id = o.gudang_id
         LEFT JOIN users u ON u.id = o.dibuat_oleh LEFT JOIN users u2 ON u2.id = o.diselesaikan_oleh WHERE o.id = ?', [$id]);
     if (!$o) fail('Sesi opname tidak ditemukan', 404);
     return $o;
@@ -10,20 +10,24 @@ function opname_get(int $id): array
 
 route('GET', '/opname', function () {
     auth();
-    return rows('SELECT o.*, u.nama AS dibuat_nama,
+    $gid = (int)($_GET['gudang_id'] ?? 0);
+    return rows('SELECT o.*, g.nama AS gudang, u.nama AS dibuat_nama,
             (SELECT COUNT(*) FROM opname_item WHERE opname_id = o.id) jml_item,
             (SELECT COUNT(*) FROM opname_item WHERE opname_id = o.id AND qty_fisik IS NOT NULL) jml_dihitung,
             (SELECT COUNT(*) FROM opname_item WHERE opname_id = o.id AND qty_fisik IS NOT NULL AND qty_fisik <> qty_sistem) jml_selisih
-        FROM opname o LEFT JOIN users u ON u.id = o.dibuat_oleh ORDER BY o.id DESC LIMIT 200');
+        FROM opname o JOIN gudang g ON g.id = o.gudang_id LEFT JOIN users u ON u.id = o.dibuat_oleh' .
+        ($gid ? " WHERE o.gudang_id = $gid" : '') . ' ORDER BY o.id DESC LIMIT 200');
 });
 
 route('POST', '/opname', function () {
     $u = require_role();
     $b = body();
     $rak = array_values(array_unique(array_filter(array_map(fn($r) => strtoupper(trim((string)$r)), (array)($b['rak'] ?? [])))));
-    $id = tx(function () use ($u, $b, $rak) {
+    $g = gudang_aktif((int)($b['gudang_id'] ?? 1));
+    $id = tx(function () use ($u, $b, $rak, $g) {
         $id = insert('opname', [
             'kode' => next_code('opname', 'SO'),
+            'gudang_id' => $g['id'],
             'tanggal' => date('Y-m-d'),
             'cakupan' => implode(',', $rak),
             'status' => 'hitung',
@@ -31,8 +35,8 @@ route('POST', '/opname', function () {
             'dibuat_oleh' => $u['id'],
         ]);
         // Snapshot saldo sistem saat sesi dibuka.
-        $where = 's.qty <> 0 AND l.aktif = 1';
-        $p = [$id];
+        $where = 's.qty <> 0 AND l.aktif = 1 AND l.gudang_id = ?';
+        $p = [$id, $g['id']];
         if ($rak) { $where .= ' AND l.rak IN (' . implode(',', array_fill(0, count($rak), '?')) . ')'; array_push($p, ...$rak); }
         q("INSERT INTO opname_item (opname_id, barang_id, lokasi_id, qty_sistem)
            SELECT ?, s.barang_id, s.lokasi_id, s.qty FROM stok s JOIN lokasi l ON l.id = s.lokasi_id WHERE $where", $p);
@@ -49,9 +53,9 @@ route('GET', '/opname/:id', function ($a) {
         FROM opname_item oi JOIN barang b ON b.id = oi.barang_id JOIN lokasi l ON l.id = oi.lokasi_id
         LEFT JOIN users u ON u.id = oi.dihitung_oleh
         WHERE oi.opname_id = ? ORDER BY l.rak, l.tingkat, l.slot, b.nama', [$id]);
-    $o['lokasi'] = rows('SELECT id, kode, rak FROM lokasi WHERE aktif = 1' .
+    $o['lokasi'] = rows('SELECT id, kode, rak FROM lokasi WHERE aktif = 1 AND gudang_id = ?' .
         ($o['cakupan'] !== '' ? ' AND FIND_IN_SET(rak, ?)' : '') . ' ORDER BY rak, tingkat, slot',
-        $o['cakupan'] !== '' ? [$o['cakupan']] : []);
+        $o['cakupan'] !== '' ? [$o['gudang_id'], $o['cakupan']] : [$o['gudang_id']]);
     return $o;
 });
 
@@ -69,14 +73,14 @@ route('POST', '/opname/:id/hitung', function ($a) {
     $o = opname_terbuka($id);
     $cak = $o['cakupan'] === '' ? null : explode(',', $o['cakupan']);
     $items = (array)(body()['items'] ?? []);
-    tx(function () use ($items, $id, $u, $cak) {
+    tx(function () use ($items, $id, $u, $cak, $o) {
         foreach ($items as $it) {
             $bid = (int)($it['barang_id'] ?? 0);
             $lid = (int)($it['lokasi_id'] ?? 0);
             $fisik = ($it['qty_fisik'] ?? '') === '' || ($it['qty_fisik'] ?? null) === null ? null : num($it['qty_fisik']);
             if ($fisik !== null && $fisik < 0) fail('Jumlah fisik tidak boleh minus');
             $lok = lokasi_aktif($lid);
-            if ($cak !== null && !in_array($lok['rak'], $cak, true)) fail("Rak {$lok['kode']} di luar cakupan opname ini");
+            if ((int)$lok['gudang_id'] !== (int)$o['gudang_id'] || ($cak !== null && !in_array($lok['rak'], $cak, true))) fail("Rak {$lok['kode']} di luar cakupan opname ini");
             barang_aktif($bid);
             $sistem = (float)(val('SELECT qty FROM stok WHERE barang_id = ? AND lokasi_id = ?', [$bid, $lid]) ?? 0);
             $ada = val('SELECT id FROM opname_item WHERE opname_id = ? AND barang_id = ? AND lokasi_id = ?', [$id, $bid, $lid]);

@@ -10,6 +10,11 @@ PHP 8.1+ native + MySQL/MariaDB, bisa dipasang di cPanel shared hosting.
 4. Setelah berhasil, **hapus `install.php`** lewat File Manager.
 5. Pastikan ekstensi PHP `pdo_mysql`, `curl`, `zip` aktif (cPanel → Select PHP Version → Extensions).
 
+## Multi gudang (sejak v1.5)
+Menu **Gudang** (admin): tambah gudang dengan **awalan kode**, mis. `CKR` → rak `CKR-A-01-01`. Gudang lama otomatis jadi
+"Gudang Utama" tanpa awalan, jadi label lama tetap berlaku. Pilihan gudang di kanan atas menyaring tampilan;
+pindah barang antar gudang lewat Transaksi → Pindah Rak. **Backup database** (phpMyAdmin → Export) sebelum update ke v1.5.
+
 ## Scan pakai HP (PWA)
 Buka `https://domain-anda/gudang/scan/` di HP (atau menu **📷 Scan HP** di aplikasi), login, lalu
 **Tambahkan ke Layar Utama** (Chrome: menu ⋮ → Install app; Safari: Bagikan → Add to Home Screen).

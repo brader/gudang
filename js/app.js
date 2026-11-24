@@ -7,14 +7,21 @@ function getToken() { try { return localStorage.getItem('rs_token'); } catch { r
 function setToken(t) { try { localStorage.setItem('rs_token', t); } catch {} }
 function clearToken() { try { localStorage.removeItem('rs_token'); } catch {} }
 
+// Request GET milik halaman sebelumnya dibatalkan saat pindah halaman, agar hasilnya tidak menimpa halaman baru.
+let ROUTE_CTRL = new AbortController();
+const STALE = () => new Promise(() => {});
+
 async function api(path, method = 'GET', body = null) {
   const opt = { method, headers: {} };
+  if (method === 'GET') opt.signal = ROUTE_CTRL.signal;
   const t = getToken();
   if (t) { opt.headers.Authorization = 'Bearer ' + t; opt.headers['X-Auth-Token'] = t; }
   if (body !== null) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const r = await fetch(API + path, opt);
+  let r;
+  try { r = await fetch(API + path, opt); } catch (e) { if (opt.signal?.aborted) return STALE(); throw e; }
   let data = null;
   try { data = await r.json(); } catch {}
+  if (opt.signal?.aborted) return STALE();
   if (r.status === 401 && path !== '/auth/login') { doLogout(); throw new Error(data?.error || 'Sesi berakhir'); }
   if (!r.ok) throw new Error(data?.error || 'Gagal (' + r.status + ')');
   return data;
@@ -74,7 +81,24 @@ async function loadMeta() {
   META = await api('/meta');
   document.getElementById('company-name').textContent = META.company_name;
   document.title = META.company_name;
+  if (GUDANG && !META.gudang.some(g => String(g.id) === GUDANG)) setGudang('');
+  renderGudangPicker();
 }
+
+// ─── Gudang aktif (filter tampilan, disimpan per browser) ──
+let GUDANG = (() => { try { return localStorage.getItem('rs_gudang') || ''; } catch { return ''; } })();
+function setGudang(v) { GUDANG = v || ''; try { localStorage.setItem('rs_gudang', GUDANG); } catch {} }
+function multiGudang() { return (META?.gudang || []).length > 1; }
+function gudangNama(id) { return META?.gudang?.find(g => String(g.id) === String(id))?.nama || ''; }
+function gudangAktifList() { return (META?.gudang || []).filter(g => Number(g.aktif)); }
+function rakList(gid = GUDANG) { return [...new Set((META?.rak || []).filter(r => !gid || String(r.gudang_id) === String(gid)).map(r => r.rak))]; }
+function renderGudangPicker() {
+  const el = document.getElementById('gudang-pick');
+  if (!el) return;
+  el.style.display = multiGudang() ? '' : 'none';
+  el.innerHTML = optionsHtml(META.gudang.map(g => ({ value: g.id, label: g.nama })), GUDANG, 'Semua gudang');
+}
+function onGudangPick(v) { setGudang(v); route(); }
 
 async function showApp() {
   await loadMeta();
@@ -99,12 +123,13 @@ const NAV = [
   { page: 'opname', icon: '✅', label: 'Stok Opname' },
   { page: 'barang', icon: '🏷️', label: 'Barang' },
   { page: 'lokasi', icon: '🗄️', label: 'Rak / Lokasi' },
+  { page: 'gudang', icon: '🏭', label: 'Gudang', admin: true },
   { page: 'users', icon: '👥', label: 'User', admin: true },
   { page: 'pengaturan', icon: '⚙️', label: 'Pengaturan', admin: true },
 ];
-const titles = { dashboard: 'Dashboard', transaksi: 'Transaksi Barang', stok: 'Stok per Rak', riwayat: 'Riwayat Mutasi', opname: 'Stok Opname', opnamed: 'Stok Opname', barang: 'Barang', barangd: 'Detail Barang', lokasi: 'Rak / Lokasi', lokasid: 'Detail Lokasi', users: 'User', pengaturan: 'Pengaturan' };
+const titles = { dashboard: 'Dashboard', transaksi: 'Transaksi Barang', stok: 'Stok per Rak', riwayat: 'Riwayat Mutasi', opname: 'Stok Opname', opnamed: 'Stok Opname', barang: 'Barang', barangd: 'Detail Barang', lokasi: 'Rak / Lokasi', lokasid: 'Detail Lokasi', gudang: 'Gudang', users: 'User', pengaturan: 'Pengaturan' };
 const navMap = { barangd: 'barang', lokasid: 'lokasi', opnamed: 'opname' };
-const addLabels = { barang: '+ Barang', lokasi: '+ Rak', users: '+ User', opname: '+ Opname Baru' };
+const addLabels = { barang: '+ Barang', lokasi: '+ Rak', users: '+ User', opname: '+ Opname Baru', gudang: '+ Gudang' };
 const PAGES = {
   dashboard: () => renderDashboard(),
   transaksi: p => renderTransaksi(p),
@@ -116,6 +141,7 @@ const PAGES = {
   barangd: id => renderBarangDetail(id),
   lokasi: () => renderLokasi(),
   lokasid: id => renderLokasiDetail(id),
+  gudang: () => renderGudang(),
   users: () => renderUsers(),
   pengaturan: () => renderPengaturan(),
 };
@@ -139,6 +165,8 @@ function route() {
   let p = PAGES[page] ? page : 'dashboard';
   if (NAV.find(n => n.page === p)?.admin && !isAdmin()) p = 'dashboard';
   CURRENT_PAGE = p;
+  ROUTE_CTRL.abort();
+  ROUTE_CTRL = new AbortController();
   document.getElementById('page-title').textContent = titles[p];
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === (navMap[p] || p)));
   const btn = document.getElementById('add-btn');
@@ -157,6 +185,7 @@ function onAddClick() {
   else if (CURRENT_PAGE === 'lokasi') openRakModal();
   else if (CURRENT_PAGE === 'users') openUserModal();
   else if (CURRENT_PAGE === 'opname') openOpnameModal();
+  else if (CURRENT_PAGE === 'gudang') openGudangModal();
 }
 
 // ─── Utils ───────────────────────────────────────────────
@@ -304,7 +333,7 @@ function findBarang(text) {
   return REF.barangBySku[sku] || REF.barang.find(b => b.nama.toLowerCase() === t.toLowerCase()) || null;
 }
 function lokasiOptions(selected, placeholder = '— pilih rak —', list = null) {
-  return optionsHtml((list || REF?.lokasi || []).map(l => ({ value: l.id, label: l.label || l.kode })), selected, placeholder);
+  return optionsHtml((list || REF?.lokasi || []).map(l => ({ value: l.id, label: l.label || (l.kode + (multiGudang() && l.gudang ? ' · ' + l.gudang : '')) })), selected, placeholder);
 }
 
 // ─── Label QR ────────────────────────────────────────────

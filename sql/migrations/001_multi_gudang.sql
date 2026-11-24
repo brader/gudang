@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS gudang (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nama VARCHAR(100) NOT NULL,
+  awalan VARCHAR(10) NOT NULL DEFAULT '',
+  alamat VARCHAR(255) NULL,
+  aktif TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_awalan (awalan)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO gudang (id, nama, awalan) VALUES (1, 'Gudang Utama', '');
+
+ALTER TABLE lokasi ADD COLUMN gudang_id INT NOT NULL DEFAULT 1 AFTER id, ADD KEY idx_gudang (gudang_id);
+
+ALTER TABLE opname ADD COLUMN gudang_id INT NOT NULL DEFAULT 1 AFTER kode;

@@ -16,7 +16,7 @@ async function renderBarang() {
 }
 
 async function loadBarang() {
-  BARANG_LIST = await api('/barang' + qs(BARANG_F));
+  BARANG_LIST = await api('/barang' + qs({ ...BARANG_F, gudang_id: GUDANG }));
   const el = document.getElementById('barang-list');
   if (!el) return;
   if (!BARANG_LIST.length) { el.innerHTML = `<div class="card-b" style="color:var(--muted)">Belum ada barang.${isAdmin() ? ' Klik <b>+ Barang</b> untuk menambah.' : ''}</div>`; return; }
@@ -105,8 +105,8 @@ async function renderBarangDetail(id) {
       </div>
     </div>
     <div class="two-col">
-      <div class="card"><div class="card-h">Stok per Rak</div>
-        ${b.stok.length ? `<table class="tbl"><tbody>${b.stok.map(s => `<tr class="click" onclick="navigate('lokasid',${s.lokasi_id})"><td class="mono">${escHtml(s.kode)}</td><td class="r"><b>${fmtQty(s.qty)}</b> ${escHtml(b.satuan)}</td></tr>`).join('')}</tbody></table>`
+      <div class="card"><div class="card-h">Stok per Rak${GUDANG && multiGudang() ? ' <span style="font-weight:400;font-size:12px;color:var(--muted)">(semua gudang)</span>' : ''}</div>
+        ${b.stok.length ? `<table class="tbl"><tbody>${b.stok.map(s => `<tr class="click" onclick="navigate('lokasid',${s.lokasi_id})"><td><span class="mono">${escHtml(s.kode)}</span>${multiGudang() ? `<div style="font-size:12px;color:var(--muted)">${escHtml(s.gudang)}</div>` : ''}</td><td class="r"><b>${fmtQty(s.qty)}</b> ${escHtml(b.satuan)}</td></tr>`).join('')}</tbody></table>`
           : '<div class="card-b" style="color:var(--muted)">Tidak ada stok.</div>'}
       </div>
       <div class="card"><div class="card-h">50 Mutasi Terakhir</div>${mutasiTable(b.mutasi, true)}</div>

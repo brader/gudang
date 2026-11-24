@@ -96,14 +96,16 @@ function rak_sedang_opname(array $lokasiIds): array
 {
     $lokasiIds = array_values(array_filter(array_map('intval', $lokasiIds)));
     if (!$lokasiIds) return [];
-    $aktif = rows("SELECT kode, cakupan FROM opname WHERE status = 'hitung'");
+    $aktif = rows("SELECT kode, gudang_id, cakupan FROM opname WHERE status = 'hitung'");
     if (!$aktif) return [];
     $in = implode(',', array_fill(0, count($lokasiIds), '?'));
-    $rak = array_column(rows("SELECT DISTINCT rak FROM lokasi WHERE id IN ($in)", $lokasiIds), 'rak');
+    $lok = rows("SELECT DISTINCT gudang_id, rak FROM lokasi WHERE id IN ($in)", $lokasiIds);
     $out = [];
     foreach ($aktif as $o) {
         $cak = $o['cakupan'] === '' ? null : explode(',', $o['cakupan']);
-        if ($cak === null || array_intersect($rak, $cak)) $out[] = $o['kode'];
+        foreach ($lok as $l) {
+            if ((int)$l['gudang_id'] === (int)$o['gudang_id'] && ($cak === null || in_array($l['rak'], $cak, true))) { $out[] = $o['kode']; break; }
+        }
     }
     return $out;
 }

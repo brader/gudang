@@ -5,7 +5,7 @@ async function renderStok() {
   document.getElementById('page').innerHTML = `
     <div class="filters">
       <input class="inp" placeholder="Cari SKU / nama / kode rak..." value="${escHtml(STOK_F.q)}" oninput="STOK_F.q=this.value;loadStokDebounced()">
-      <select class="inp" onchange="STOK_F.rak=this.value;loadStok()">${optionsHtml(META.rak.map(r => ({ value: r, label: 'Rak ' + r })), STOK_F.rak, 'Semua rak')}</select>
+      <select class="inp" onchange="STOK_F.rak=this.value;loadStok()">${optionsHtml(rakList().map(r => ({ value: r, label: 'Rak ' + r })), STOK_F.rak, 'Semua rak')}</select>
       <select class="inp" onchange="STOK_F.kategori=this.value;loadStok()">${optionsHtml(META.kategori, STOK_F.kategori, 'Semua kategori')}</select>
       <select class="inp" onchange="STOK_F.urut=this.value;loadStok()">${optionsHtml([{ value: 'barang', label: 'Urut per barang' }, { value: 'rak', label: 'Urut per rak' }], STOK_F.urut)}</select>
       <button class="btn btn-o" onclick="exportStok()">⬇ CSV</button>
@@ -16,7 +16,7 @@ async function renderStok() {
 }
 
 async function loadStok() {
-  STOK_LIST = await api('/stok' + qs(STOK_F));
+  STOK_LIST = await api('/stok' + qs({ ...STOK_F, gudang_id: GUDANG }));
   const el = document.getElementById('stok-list');
   if (!el) return;
   if (!STOK_LIST.length) { el.innerHTML = '<div class="card-b" style="color:var(--muted)">Tidak ada stok.</div>'; return; }
@@ -24,7 +24,7 @@ async function loadStok() {
   el.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>${byRak ? '<th>Rak</th><th>Barang</th>' : '<th>Barang</th><th>Rak</th>'}<th class="r">Qty</th></tr></thead><tbody>
     ${STOK_LIST.map(s => {
       const brg = `<td><a href="#barangd/${s.barang_id}">${escHtml(s.nama)}</a><div class="mono" style="color:var(--muted)">${escHtml(s.sku)}</div></td>`;
-      const rak = `<td class="mono"><a href="#lokasid/${s.lokasi_id}">${escHtml(s.kode)}</a></td>`;
+      const rak = `<td><a class="mono" href="#lokasid/${s.lokasi_id}">${escHtml(s.kode)}</a>${multiGudang() && !GUDANG ? `<div style="font-size:12px;color:var(--muted)">${escHtml(s.gudang)}</div>` : ''}</td>`;
       return `<tr>${byRak ? rak + brg : brg + rak}<td class="r" style="white-space:nowrap;${Number(s.qty) < 0 ? 'color:var(--danger)' : ''}"><b>${fmtQty(s.qty)}</b> ${escHtml(s.satuan)}</td></tr>`;
     }).join('')}
   </tbody></table></div><div style="padding:10px 12px;font-size:12px;color:var(--muted)">${STOK_LIST.length} baris</div>`;
@@ -32,8 +32,8 @@ async function loadStok() {
 const loadStokDebounced = debounce(loadStok);
 
 function exportStok() {
-  downloadCsv('stok-' + todayStr() + '.csv', ['Rak', 'SKU', 'Nama', 'Kategori', 'Qty', 'Satuan'],
-    STOK_LIST.map(s => [s.kode, s.sku, s.nama, s.kategori, csvNum(s.qty), s.satuan]));
+  downloadCsv('stok-' + todayStr() + '.csv', ['Gudang', 'Rak', 'SKU', 'Nama', 'Kategori', 'Qty', 'Satuan'],
+    STOK_LIST.map(s => [s.gudang, s.kode, s.sku, s.nama, s.kategori, csvNum(s.qty), s.satuan]));
 }
 
 function printStok() {
@@ -42,7 +42,7 @@ function printStok() {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Stok ${todayStr()}</title><style>
     body{font-family:-apple-system,'Segoe UI',sans-serif;font-size:11pt;margin:12mm} table{width:100%;border-collapse:collapse}
     th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left} td.r{text-align:right} .m{font-family:Menlo,monospace}
-  </style></head><body><h3>${escHtml(META.company_name)} — Stok per ${fmtDateTime(new Date().toISOString())}</h3>
+  </style></head><body><h3>${escHtml(META.company_name)}${GUDANG ? ' · ' + escHtml(gudangNama(GUDANG)) : ''} — Stok per ${fmtDateTime(new Date().toISOString())}</h3>
   <table><thead><tr><th>Rak</th><th>SKU</th><th>Nama</th><th>Qty</th><th>Satuan</th><th style="width:22mm">Cek Fisik</th></tr></thead><tbody>
   ${STOK_LIST.map(s => `<tr><td class="m">${escHtml(s.kode)}</td><td class="m">${escHtml(s.sku)}</td><td>${escHtml(s.nama)}</td><td class="r">${fmtQty(s.qty)}</td><td>${escHtml(s.satuan)}</td><td></td></tr>`).join('')}
   </tbody></table><script>print()<\/script></body></html>`);
@@ -71,7 +71,7 @@ async function renderRiwayat() {
 }
 
 async function loadMutasi() {
-  MUT_LIST = await api('/mutasi' + qs(MUT_F));
+  MUT_LIST = await api('/mutasi' + qs({ ...MUT_F, gudang_id: GUDANG }));
   const el = document.getElementById('mutasi-list');
   if (!el) return;
   el.innerHTML = mutasiTable(MUT_LIST) + (MUT_LIST.length >= 500 ? '<div style="padding:10px 12px;font-size:12px;color:var(--muted)">Menampilkan 500 terbaru — persempit filter tanggal, atau export CSV untuk semua.</div>' : '');
@@ -80,7 +80,7 @@ const loadMutasiDebounced = debounce(loadMutasi);
 
 async function exportMutasi() {
   try {
-    const list = await api('/mutasi' + qs({ ...MUT_F, export: 1 }));
+    const list = await api('/mutasi' + qs({ ...MUT_F, gudang_id: GUDANG, export: 1 }));
     downloadCsv('mutasi-' + todayStr() + '.csv', ['Tanggal', 'Jenis', 'SKU', 'Barang', 'Rak Asal', 'Rak Tujuan', 'Qty', 'Satuan', 'Referensi', 'Catatan', 'Oleh', 'Dicatat'],
       list.map(m => [m.tanggal, JENIS[m.jenis]?.[0] || m.jenis, m.sku, m.barang, m.asal, m.tujuan, csvNum(m.qty), m.satuan, m.referensi, m.catatan, m.oleh, m.created_at]));
   } catch (e) { toast(e.message, true); }

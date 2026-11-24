@@ -1,5 +1,5 @@
 async function renderDashboard() {
-  const d = await api('/dashboard');
+  const d = await api('/dashboard' + qs({ gudang_id: GUDANG }));
   const hari = Object.fromEntries(d.hari_ini.map(r => [r.jenis, Number(r.n)]));
   const stat = (n, l, onclick = '') => `<div class="card stat" ${onclick ? `style="cursor:pointer" onclick="${onclick}"` : ''}><div class="n">${n}</div><div class="l">${l}</div></div>`;
   document.getElementById('page').innerHTML = `
@@ -15,7 +15,7 @@ async function renderDashboard() {
       ${stat(`<span style="color:${d.menipis.length ? 'var(--danger)' : 'inherit'}">${d.menipis.length}</span>`, 'Barang di bawah stok minimum')}
     </div>
     ${d.opname_aktif.length ? `<div class="card card-b" style="margin-bottom:16px;background:#fffbeb;border-color:#fde68a">
-      <b>Stok opname sedang berjalan:</b> ${d.opname_aktif.map(o => `<a href="#opnamed/${o.id}">${escHtml(o.kode)}</a> (${o.cakupan ? 'rak ' + escHtml(o.cakupan) : 'semua rak'})`).join(', ')}
+      <b>Stok opname sedang berjalan:</b> ${d.opname_aktif.map(o => `<a href="#opnamed/${o.id}">${escHtml(o.kode)}</a> (${multiGudang() ? escHtml(o.gudang) + ', ' : ''}${o.cakupan ? 'rak ' + escHtml(o.cakupan) : 'semua rak'})`).join(', ')}
     </div>` : ''}
     <div class="two-col">
       <div class="card">

@@ -5,12 +5,12 @@ function opnBadge(s) {
 }
 
 async function renderOpnameList() {
-  const list = await api('/opname');
+  const list = await api('/opname' + qs({ gudang_id: GUDANG }));
   document.getElementById('page').innerHTML = `<div class="card">${list.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr>
       <th>Kode</th><th>Tanggal</th><th>Cakupan</th><th>Status</th><th class="r">Progres</th><th class="r">Selisih</th><th class="hide-m">Dibuat</th></tr></thead><tbody>
     ${list.map(o => `<tr class="click" onclick="navigate('opnamed',${o.id})">
       <td class="mono"><b>${escHtml(o.kode)}</b></td><td>${fmtDate(o.tanggal)}</td>
-      <td>${o.cakupan ? 'Rak ' + escHtml(o.cakupan.replaceAll(',', ', ')) : 'Semua rak'}</td>
+      <td>${multiGudang() ? escHtml(o.gudang) + ' · ' : ''}${o.cakupan ? 'Rak ' + escHtml(o.cakupan.replaceAll(',', ', ')) : 'Semua rak'}</td>
       <td>${opnBadge(o.status)}</td>
       <td class="r">${o.jml_dihitung} / ${o.jml_item}</td>
       <td class="r" style="${Number(o.jml_selisih) ? 'color:var(--danger);font-weight:700' : ''}">${o.jml_selisih}</td>
@@ -21,11 +21,18 @@ async function renderOpnameList() {
 function openOpnameModal() {
   document.getElementById('mo-semua').checked = true;
   document.getElementById('mo-rak').style.display = 'none';
-  document.getElementById('mo-rak').innerHTML = META.rak.length
-    ? META.rak.map(r => `<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" class="mo-cb" value="${escHtml(r)}"> Rak ${escHtml(r)}</label>`).join('')
-    : '<span style="color:var(--muted)">Belum ada rak</span>';
+  document.getElementById('mo-gudang').innerHTML = optionsHtml(gudangAktifList().map(g => ({ value: g.id, label: g.nama })), GUDANG || gudangAktifList()[0]?.id);
+  document.getElementById('mo-gudang-wrap').style.display = multiGudang() ? '' : 'none';
+  renderOpnameRakPick();
   setVal('mo-catatan', '');
   openModal('modal-opname');
+}
+
+function renderOpnameRakPick() {
+  const raks = rakList(val('mo-gudang'));
+  document.getElementById('mo-rak').innerHTML = raks.length
+    ? raks.map(r => `<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" class="mo-cb" value="${escHtml(r)}"> Rak ${escHtml(r)}</label>`).join('')
+    : '<span style="color:var(--muted)">Belum ada rak di gudang ini</span>';
 }
 
 async function createOpname(btn) {
@@ -33,7 +40,7 @@ async function createOpname(btn) {
   const rak = semua ? [] : [...document.querySelectorAll('.mo-cb:checked')].map(c => c.value);
   if (!semua && !rak.length) return toast('Pilih minimal satu rak', true);
   try {
-    const r = await withBtn(btn, () => api('/opname', 'POST', { rak, catatan: val('mo-catatan') }));
+    const r = await withBtn(btn, () => api('/opname', 'POST', { gudang_id: val('mo-gudang'), rak, catatan: val('mo-catatan') }));
     closeModal('modal-opname');
     navigate('opnamed', r.id);
   } catch (e) { toast(e.message, true); }
@@ -57,7 +64,7 @@ async function renderOpnameDetail(id) {
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:220px">
           <div style="font-size:17px;font-weight:800"><span class="mono">${escHtml(o.kode)}</span> ${opnBadge(o.status)}</div>
-          <div style="color:var(--muted);font-size:13px">${fmtDate(o.tanggal)} · ${o.cakupan ? 'Rak ' + escHtml(o.cakupan.replaceAll(',', ', ')) : 'Semua rak'} · dibuat ${escHtml(o.dibuat_nama || '')}${o.catatan ? ' · ' + escHtml(o.catatan) : ''}
+          <div style="color:var(--muted);font-size:13px">${fmtDate(o.tanggal)} · ${multiGudang() ? escHtml(o.gudang) + ' · ' : ''}${o.cakupan ? 'Rak ' + escHtml(o.cakupan.replaceAll(',', ', ')) : 'Semua rak'} · dibuat ${escHtml(o.dibuat_nama || '')}${o.catatan ? ' · ' + escHtml(o.catatan) : ''}
             ${o.selesai_at ? `<br>${o.status === 'selesai' ? 'Diselesaikan' : 'Ditutup'} ${escHtml(o.selesai_nama || '')} ${fmtDateTime(o.selesai_at)}` : ''}</div>
         </div>
         <div id="opn-sum" style="text-align:right"></div>
@@ -234,7 +241,7 @@ function printOpname() {
     body{font-family:-apple-system,'Segoe UI',sans-serif;font-size:10.5pt;margin:10mm} table{width:100%;border-collapse:collapse}
     th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left} td.r{text-align:right} .m{font-family:Menlo,monospace}
   </style></head><body><h3 style="margin:0">${escHtml(META.company_name)} — Stok Opname ${escHtml(o.kode)}</h3>
-  <div style="margin:4px 0 10px">${fmtDate(o.tanggal)} · ${o.cakupan ? 'Rak ' + escHtml(o.cakupan) : 'Semua rak'} · ${OPN_STATUS[o.status][0]}</div>
+  <div style="margin:4px 0 10px">${fmtDate(o.tanggal)} · ${escHtml(o.gudang)} · ${o.cakupan ? 'Rak ' + escHtml(o.cakupan) : 'Semua rak'} · ${OPN_STATUS[o.status][0]}</div>
   <table><thead><tr><th>Rak</th><th>SKU</th><th>Barang</th><th>Sistem</th><th>Fisik</th><th>Selisih</th></tr></thead><tbody>
   ${o.items.map(x => {
     const sel = x.qty_fisik === null ? '' : Number(x.qty_fisik) - Number(x.qty_sistem);

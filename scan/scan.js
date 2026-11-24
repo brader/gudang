@@ -321,14 +321,14 @@ function renderCek() {
   if (!S.cek) return '<div class="card card-b hint">Scan label rak untuk melihat isinya, atau scan barang untuk melihat di rak mana saja barang itu disimpan.</div>';
   const d = S.cek.data;
   if (S.cek.tipe === 'lokasi') {
-    return `<div class="card"><div class="card-h">🗄️ Rak <code>${esc(d.kode)}</code><span class="hint" style="margin-left:auto;font-weight:400">${d.stok.length} jenis barang</span></div>
+    return `<div class="card"><div class="card-h">🗄️ Rak <code>${esc(d.kode)}</code> <span class="hint" style="font-weight:400">${esc(d.gudang || '')}</span><span class="hint" style="margin-left:auto;font-weight:400">${d.stok.length} jenis barang</span></div>
       ${d.stok.length ? d.stok.map(s => `<div class="row"><div><div style="font-weight:600">${esc(s.nama)}</div><div class="sub">${esc(s.sku)}</div></div><b style="white-space:nowrap">${fq(s.qty)} ${esc(s.satuan)}</b></div>`).join('')
         : '<div class="card-b hint">Rak kosong.</div>'}</div>`;
   }
   const low = Number(d.stok_min) > 0 && d.total < Number(d.stok_min);
   return `<div class="card"><div class="card-h" style="flex-direction:column;align-items:flex-start;gap:2px"><div>🏷️ ${esc(d.nama)}</div><div class="sub">${esc(d.sku)}</div></div>
     <div class="row" style="background:#f8fafc"><span>Total stok</span><b style="color:${low ? 'var(--danger)' : 'inherit'}">${fq(d.total)} ${esc(d.satuan)}${low ? ' · di bawah minimum' : ''}</b></div>
-    ${d.stok.length ? d.stok.map(s => `<div class="row"><code>${esc(s.kode)}</code><b>${fq(s.qty)} ${esc(d.satuan)}</b></div>`).join('') : '<div class="card-b hint">Tidak ada stok di rak manapun.</div>'}</div>`;
+    ${d.stok.length ? d.stok.map(s => `<div class="row"><div><code>${esc(s.kode)}</code> <span class="hint">${esc(s.gudang || '')}</span></div><b>${fq(s.qty)} ${esc(d.satuan)}</b></div>`).join('') : '<div class="card-b hint">Tidak ada stok di rak manapun.</div>'}</div>`;
 }
 
 // ─── Opname ──────────────────────────────────────────────
@@ -342,7 +342,7 @@ async function loadOpnameList() {
     const saved = lsGet('rs_scan_op');
     if (list.length === 1 || list.some(o => String(o.id) === saved)) return pilihOpname(list.length === 1 ? list[0].id : saved);
     p.innerHTML = list.length
-      ? `<div class="card"><div class="card-h">Pilih sesi opname</div>${list.map(o => `<div class="row" onclick="pilihOpname(${o.id})" style="cursor:pointer"><div><b>${esc(o.kode)}</b><div class="sub">${o.cakupan ? 'Rak ' + esc(o.cakupan) : 'Semua rak'} · ${o.jml_dihitung}/${o.jml_item}</div></div><span>›</span></div>`).join('')}</div>`
+      ? `<div class="card"><div class="card-h">Pilih sesi opname</div>${list.map(o => `<div class="row" onclick="pilihOpname(${o.id})" style="cursor:pointer"><div><b>${esc(o.kode)}</b><div class="sub">${esc(o.gudang)} · ${o.cakupan ? 'Rak ' + esc(o.cakupan) : 'Semua rak'} · ${o.jml_dihitung}/${o.jml_item}</div></div><span>›</span></div>`).join('')}</div>`
       : '<div class="card card-b hint">Tidak ada stok opname yang sedang berjalan. Admin memulai opname dari aplikasi utama (menu Stok Opname).</div>';
   } catch (e) { p.innerHTML = `<div class="card card-b" style="color:var(--danger)">${esc(e.message)}</div>`; }
 }
@@ -365,7 +365,7 @@ function renderOpname() {
   if (!o) return;
   const rows = S.opRak ? o.items.filter(x => String(x.lokasi_id) === String(S.opRak.id)) : [];
   const done = o.items.filter(x => x.qty_fisik !== null).length;
-  p.innerHTML = `<div class="ctx"><span class="chip">${esc(o.kode)} · ${done}/${o.items.length}</span>${chip('Rak', S.opRak, '① Scan label rak')}
+  p.innerHTML = `<div class="ctx"><span class="chip">${esc(o.kode)} · ${esc(o.gudang)} · ${done}/${o.items.length}</span>${chip('Rak', S.opRak, '① Scan label rak')}
       <button class="btn btn-o btn-sm" onclick="if(!Object.keys(S.opDirty).length||confirm('Hitungan belum disimpan. Ganti sesi?')){lsSet('rs_scan_op','');S.opDirty={};loadOpnameList()}">Ganti sesi</button></div>
     ${S.opRak ? `<div class="card"><div class="card-h">Rak <code>${esc(S.opRak.kode)}</code>
         ${rows.some(x => x.qty_fisik === null) ? `<button class="btn btn-o btn-sm" style="margin-left:auto" onclick="opSamaSistem()">Kosong = sistem</button>` : ''}</div>

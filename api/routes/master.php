@@ -12,10 +12,12 @@ route('GET', '/barang', function () {
     if (($k = trim((string)($_GET['kategori'] ?? ''))) !== '') { $where[] = 'b.kategori = ?'; $p[] = $k; }
     if (($_GET['aktif'] ?? '1') === '1') $where[] = 'b.aktif = 1';
     if (($_GET['menipis'] ?? '') === '1') $where[] = 'b.stok_min > 0 AND COALESCE(t.total, 0) < b.stok_min';
-    return rows('SELECT b.*, COALESCE(t.total, 0) AS total, COALESCE(t.jml_rak, 0) AS jml_rak
-        FROM barang b
-        LEFT JOIN (SELECT barang_id, SUM(qty) total, SUM(qty > 0) jml_rak FROM stok GROUP BY barang_id) t ON t.barang_id = b.id
-        WHERE ' . implode(' AND ', $where) . ' ORDER BY b.nama LIMIT 1000', $p);
+    $gid = (int)($_GET['gudang_id'] ?? 0);
+    $sub = $gid ? 'SELECT s.barang_id, SUM(s.qty) total, SUM(s.qty > 0) jml_rak FROM stok s JOIN lokasi l ON l.id = s.lokasi_id WHERE l.gudang_id = ' . $gid . ' GROUP BY s.barang_id'
+        : 'SELECT barang_id, SUM(qty) total, SUM(qty > 0) jml_rak FROM stok GROUP BY barang_id';
+    return rows("SELECT b.*, COALESCE(t.total, 0) AS total, COALESCE(t.jml_rak, 0) AS jml_rak
+        FROM barang b LEFT JOIN ($sub) t ON t.barang_id = b.id
+        WHERE " . implode(' AND ', $where) . ' ORDER BY b.nama LIMIT 1000', $p);
 });
 
 route('GET', '/barang/:id', function ($a) {
@@ -23,8 +25,8 @@ route('GET', '/barang/:id', function ($a) {
     $id = (int)$a['id'];
     $b = row('SELECT * FROM barang WHERE id = ?', [$id]);
     if (!$b) fail('Barang tidak ditemukan', 404);
-    $b['stok'] = rows('SELECT s.lokasi_id, l.kode, s.qty FROM stok s JOIN lokasi l ON l.id = s.lokasi_id
-        WHERE s.barang_id = ? AND s.qty <> 0 ORDER BY l.kode', [$id]);
+    $b['stok'] = rows('SELECT s.lokasi_id, l.kode, l.gudang_id, g.nama AS gudang, s.qty FROM stok s JOIN lokasi l ON l.id = s.lokasi_id
+        JOIN gudang g ON g.id = l.gudang_id WHERE s.barang_id = ? AND s.qty <> 0 ORDER BY g.id, l.kode', [$id]);
     $b['total'] = array_sum(array_map(fn($r) => (float)$r['qty'], $b['stok']));
     $b['mutasi'] = rows(mutasi_sql('m.barang_id = ?') . ' LIMIT 50', [$id]);
     return $b;
@@ -60,17 +62,18 @@ route('GET', '/lokasi', function () {
     $where = ['1=1'];
     $p = [];
     if (($r = trim((string)($_GET['rak'] ?? ''))) !== '') { $where[] = 'l.rak = ?'; $p[] = $r; }
+    if ($gid = (int)($_GET['gudang_id'] ?? 0)) { $where[] = 'l.gudang_id = ?'; $p[] = $gid; }
     if (($_GET['aktif'] ?? '1') === '1') $where[] = 'l.aktif = 1';
-    return rows('SELECT l.*, COALESCE(t.jml_barang, 0) AS jml_barang, COALESCE(t.total, 0) AS total
-        FROM lokasi l
+    return rows('SELECT l.*, g.nama AS gudang, COALESCE(t.jml_barang, 0) AS jml_barang, COALESCE(t.total, 0) AS total
+        FROM lokasi l JOIN gudang g ON g.id = l.gudang_id
         LEFT JOIN (SELECT lokasi_id, SUM(qty > 0) jml_barang, SUM(qty) total FROM stok GROUP BY lokasi_id) t ON t.lokasi_id = l.id
-        WHERE ' . implode(' AND ', $where) . ' ORDER BY l.rak, l.tingkat, l.slot, l.kode', $p);
+        WHERE ' . implode(' AND ', $where) . ' ORDER BY l.gudang_id, l.rak, l.tingkat, l.slot, l.kode', $p);
 });
 
 route('GET', '/lokasi/:id', function ($a) {
     auth();
     $id = (int)$a['id'];
-    $l = row('SELECT * FROM lokasi WHERE id = ?', [$id]);
+    $l = row('SELECT l.*, g.nama AS gudang FROM lokasi l JOIN gudang g ON g.id = l.gudang_id WHERE l.id = ?', [$id]);
     if (!$l) fail('Lokasi tidak ditemukan', 404);
     $l['stok'] = rows('SELECT s.barang_id, b.sku, b.nama, b.satuan, s.qty FROM stok s JOIN barang b ON b.id = s.barang_id
         WHERE s.lokasi_id = ? AND s.qty <> 0 ORDER BY b.nama', [$id]);
@@ -78,26 +81,41 @@ route('GET', '/lokasi/:id', function ($a) {
     return $l;
 });
 
-function kode_lokasi(string $rak, int $tingkat, int $slot): string
+function kode_lokasi(string $awalan, string $rak, int $tingkat, int $slot): string
 {
-    return sprintf('%s-%02d-%02d', $rak, $tingkat, $slot);
+    return ($awalan !== '' ? "$awalan-" : '') . sprintf('%s-%02d-%02d', $rak, $tingkat, $slot);
+}
+
+function gudang_aktif(int $id): array
+{
+    $g = row('SELECT * FROM gudang WHERE id = ?', [$id]);
+    if (!$g) fail('Pilih gudang');
+    if (!(int)$g['aktif']) fail("Gudang {$g['nama']} sudah nonaktif");
+    return $g;
 }
 
 // Buat banyak lokasi sekaligus: rak A, tingkat 1..N, slot 1..M. Lokasi yang sudah ada dilewati.
 route('POST', '/lokasi/generate', function () {
     require_role();
     $b = body();
+    $g = gudang_aktif((int)($b['gudang_id'] ?? 1));
     $rak = strtoupper(trim((string)($b['rak'] ?? '')));
     $tingkat = (int)($b['tingkat'] ?? 0);
     $slot = (int)($b['slot'] ?? 0);
     if (!preg_match('/^[A-Z0-9]{1,10}$/', $rak)) fail('Kode rak hanya huruf/angka tanpa spasi, maks 10 karakter');
     if ($tingkat < 1 || $tingkat > 50 || $slot < 1 || $slot > 99) fail('Tingkat 1-50 dan slot 1-99');
     $baru = 0;
-    tx(function () use ($rak, $tingkat, $slot, &$baru) {
+    tx(function () use ($g, $rak, $tingkat, $slot, &$baru) {
         for ($t = 1; $t <= $tingkat; $t++) {
             for ($s = 1; $s <= $slot; $s++) {
-                $baru += q('INSERT IGNORE INTO lokasi (kode, rak, tingkat, slot) VALUES (?, ?, ?, ?)',
-                    [kode_lokasi($rak, $t, $s), $rak, $t, $s])->rowCount();
+                $kode = kode_lokasi($g['awalan'], $rak, $t, $s);
+                $ada = row('SELECT gudang_id FROM lokasi WHERE kode = ?', [$kode]);
+                if ($ada) {
+                    if ((int)$ada['gudang_id'] !== (int)$g['id']) fail("Kode $kode sudah dipakai gudang lain");
+                    continue;
+                }
+                insert('lokasi', ['gudang_id' => $g['id'], 'kode' => $kode, 'rak' => $rak, 'tingkat' => $t, 'slot' => $s]);
+                $baru++;
             }
         }
     });
@@ -107,14 +125,15 @@ route('POST', '/lokasi/generate', function () {
 route('POST', '/lokasi', function () {
     require_role();
     $b = body();
+    $g = gudang_aktif((int)($b['gudang_id'] ?? 1));
     $rak = strtoupper(trim((string)($b['rak'] ?? '')));
     $t = (int)($b['tingkat'] ?? 1);
     $s = (int)($b['slot'] ?? 1);
     if (!preg_match('/^[A-Z0-9]{1,10}$/', $rak)) fail('Kode rak hanya huruf/angka tanpa spasi');
     if ($t < 1 || $s < 1) fail('Tingkat dan slot minimal 1');
-    $kode = kode_lokasi($rak, $t, $s);
+    $kode = kode_lokasi($g['awalan'], $rak, $t, $s);
     if (val('SELECT id FROM lokasi WHERE kode = ?', [$kode])) fail("Lokasi $kode sudah ada");
-    return ['id' => insert('lokasi', ['kode' => $kode, 'rak' => $rak, 'tingkat' => $t, 'slot' => $s,
+    return ['id' => insert('lokasi', ['gudang_id' => $g['id'], 'kode' => $kode, 'rak' => $rak, 'tingkat' => $t, 'slot' => $s,
         'keterangan' => trim((string)($b['keterangan'] ?? '')) ?: null])];
 });
 
@@ -134,7 +153,51 @@ route('PUT', '/lokasi/:id', function ($a) {
 route('GET', '/scan/:kode', function ($a) {
     auth();
     $kode = strtoupper(trim(rawurldecode($a['kode'])));
-    if ($l = row('SELECT id, kode, aktif FROM lokasi WHERE kode = ?', [$kode])) return ['tipe' => 'lokasi'] + $l;
+    if ($l = row('SELECT l.id, l.kode, l.aktif, l.gudang_id, g.nama AS gudang FROM lokasi l JOIN gudang g ON g.id = l.gudang_id WHERE l.kode = ?', [$kode])) return ['tipe' => 'lokasi'] + $l;
     if ($b = row('SELECT id, sku, nama, satuan, aktif FROM barang WHERE sku = ?', [$kode])) return ['tipe' => 'barang'] + $b;
     fail("Kode $kode tidak dikenal", 404);
 });
+
+// ─── Gudang ──────────────────────────────────────────────
+route('GET', '/gudang', function () {
+    auth();
+    return rows('SELECT g.*, COUNT(l.id) AS jml_lokasi, COALESCE(SUM(t.isi), 0) AS lokasi_terisi
+        FROM gudang g LEFT JOIN lokasi l ON l.gudang_id = g.id AND l.aktif = 1
+        LEFT JOIN (SELECT lokasi_id, 1 AS isi FROM stok WHERE qty > 0 GROUP BY lokasi_id) t ON t.lokasi_id = l.id
+        GROUP BY g.id, g.nama, g.awalan, g.alamat, g.aktif, g.created_at ORDER BY g.id');
+});
+
+function simpan_gudang(?int $id): array
+{
+    require_role();
+    $b = body();
+    $d = [
+        'nama' => trim((string)($b['nama'] ?? '')),
+        'awalan' => strtoupper(trim((string)($b['awalan'] ?? ''))),
+        'alamat' => trim((string)($b['alamat'] ?? '')) ?: null,
+        'aktif' => array_key_exists('aktif', $b) ? (!empty($b['aktif']) ? 1 : 0) : 1,
+    ];
+    if ($d['nama'] === '') fail('Nama gudang wajib diisi');
+    if ($d['awalan'] !== '' && !preg_match('/^[A-Z0-9]{1,10}$/', $d['awalan'])) fail('Awalan kode hanya huruf/angka tanpa spasi, maks 10 karakter');
+    if (val('SELECT id FROM gudang WHERE awalan = ? AND id <> ?', [$d['awalan'], $id ?? 0])) {
+        fail($d['awalan'] === '' ? 'Sudah ada gudang tanpa awalan. Gudang baru wajib punya awalan kode, mis. G2' : "Awalan {$d['awalan']} sudah dipakai gudang lain");
+    }
+    if ($id) {
+        $lama = row('SELECT * FROM gudang WHERE id = ?', [$id]);
+        if (!$lama) fail('Gudang tidak ditemukan', 404);
+        // Awalan ikut tercetak di label rak, jadi tidak boleh diubah setelah gudang punya lokasi.
+        if ($lama['awalan'] !== $d['awalan'] && val('SELECT id FROM lokasi WHERE gudang_id = ? LIMIT 1', [$id])) {
+            fail('Awalan tidak bisa diubah karena gudang ini sudah punya rak berlabel');
+        }
+        if (!$d['aktif'] && (float)val('SELECT COALESCE(SUM(s.qty), 0) FROM stok s JOIN lokasi l ON l.id = s.lokasi_id WHERE l.gudang_id = ?', [$id]) != 0) {
+            fail('Gudang masih berisi barang. Pindahkan dulu isinya sebelum dinonaktifkan.');
+        }
+        update('gudang', $id, $d);
+    } else {
+        $id = insert('gudang', $d);
+    }
+    return ['id' => $id];
+}
+
+route('POST', '/gudang', fn() => simpan_gudang(null));
+route('PUT', '/gudang/:id', fn($a) => simpan_gudang((int)$a['id']));
