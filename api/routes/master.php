@@ -149,6 +149,93 @@ route('PUT', '/lokasi/:id', function ($a) {
     return ['ok' => true];
 });
 
+// Lokasi yang pernah dipakai (ada stok, riwayat mutasi, atau masuk opname) tidak boleh dihapus agar riwayat tetap utuh.
+function lokasi_terpakai(array $ids): array
+{
+    if (!$ids) return [];
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    return array_column(rows("SELECT l.id, l.kode FROM lokasi l WHERE l.id IN ($in) AND (
+        EXISTS (SELECT 1 FROM stok s WHERE s.lokasi_id = l.id AND s.qty <> 0)
+        OR EXISTS (SELECT 1 FROM mutasi m WHERE m.lokasi_asal_id = l.id OR m.lokasi_tujuan_id = l.id)
+        OR EXISTS (SELECT 1 FROM opname_item oi WHERE oi.lokasi_id = l.id))", $ids), 'kode', 'id');
+}
+
+function hapus_lokasi(array $ids): void
+{
+    if (!$ids) return;
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    q("DELETE FROM stok WHERE lokasi_id IN ($in)", $ids);
+    q("DELETE FROM lokasi WHERE id IN ($in)", $ids);
+}
+
+route('DELETE', '/lokasi/:id', function ($a) {
+    require_role();
+    $id = (int)$a['id'];
+    $kode = val('SELECT kode FROM lokasi WHERE id = ?', [$id]);
+    if (!$kode) fail('Lokasi tidak ditemukan', 404);
+    if (lokasi_terpakai([$id])) fail("Lokasi $kode sudah punya riwayat stok/transaksi, jadi tidak bisa dihapus. Nonaktifkan saja.");
+    tx(fn() => hapus_lokasi([$id]));
+    return ['ok' => true];
+});
+
+function rak_lokasi(int $gudangId, string $rak): array
+{
+    $list = rows('SELECT * FROM lokasi WHERE gudang_id = ? AND rak = ? ORDER BY tingkat, slot', [$gudangId, $rak]);
+    if (!$list) fail("Rak $rak tidak ditemukan", 404);
+    return $list;
+}
+
+// Ubah kode rak (mis. A → C, semua lokasinya ikut berganti kode) dan/atau aktif-nonaktifkan seluruh rak.
+route('PUT', '/rak/:gudang/:rak', function ($a) {
+    require_role();
+    $gid = (int)$a['gudang'];
+    $rak = strtoupper(rawurldecode($a['rak']));
+    $list = rak_lokasi($gid, $rak);
+    $g = row('SELECT * FROM gudang WHERE id = ?', [$gid]);
+    $b = body();
+    $baru = strtoupper(trim((string)($b['rak_baru'] ?? $rak)));
+    if (!preg_match('/^[A-Z0-9]{1,10}$/', $baru)) fail('Kode rak hanya huruf/angka tanpa spasi, maks 10 karakter');
+    $ids = array_column($list, 'id');
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $aktif = array_key_exists('aktif', $b) ? (!empty($b['aktif']) ? 1 : 0) : null;
+    $kodeBaru = [];
+    if ($aktif === 0 && (float)val("SELECT COALESCE(SUM(qty), 0) FROM stok WHERE lokasi_id IN ($in)", $ids) != 0) {
+        fail("Rak $rak masih berisi barang. Pindahkan dulu isinya sebelum dinonaktifkan.");
+    }
+    if ($baru !== $rak) {
+        foreach (rows("SELECT kode, cakupan FROM opname WHERE status = 'hitung' AND gudang_id = ?", [$gid]) as $o) {
+            if ($o['cakupan'] === '' || in_array($rak, explode(',', $o['cakupan']), true)) fail("Rak $rak sedang dalam stok opname {$o['kode']}. Selesaikan dulu opnamenya.");
+        }
+        foreach ($list as $l) $kodeBaru[$l['id']] = kode_lokasi($g['awalan'], $baru, (int)$l['tingkat'], (int)$l['slot']);
+        $kin = implode(',', array_fill(0, count($kodeBaru), '?'));
+        $bentrok = val("SELECT kode FROM lokasi WHERE kode IN ($kin) AND id NOT IN ($in) LIMIT 1", [...array_values($kodeBaru), ...$ids]);
+        if ($bentrok) fail("Kode $bentrok sudah dipakai. Pilih kode rak lain.");
+    }
+    tx(function () use ($list, $baru, $rak, $aktif, $kodeBaru, $ids, $in) {
+        // Kode diganti lewat nilai sementara dulu supaya tidak bentrok dengan UNIQUE saat lokasi dalam satu rak saling bertukar kode.
+        if ($baru !== $rak) {
+            q("UPDATE lokasi SET kode = CONCAT('~', id) WHERE id IN ($in)", $ids);
+            foreach ($list as $l) q('UPDATE lokasi SET kode = ?, rak = ? WHERE id = ?', [$kodeBaru[$l['id']], $baru, $l['id']]);
+        }
+        if ($aktif !== null) q("UPDATE lokasi SET aktif = ? WHERE id IN ($in)", [$aktif, ...$ids]);
+    });
+    return ['ok' => true, 'rak' => $baru, 'jumlah' => count($list)];
+});
+
+route('DELETE', '/rak/:gudang/:rak', function ($a) {
+    require_role();
+    $gid = (int)$a['gudang'];
+    $rak = strtoupper(rawurldecode($a['rak']));
+    $ids = array_column(rak_lokasi($gid, $rak), 'id');
+    $pakai = lokasi_terpakai($ids);
+    if ($pakai) {
+        fail(count($pakai) . ' lokasi di rak ' . $rak . ' sudah punya riwayat stok/transaksi (mis. ' . implode(', ', array_slice($pakai, 0, 3))
+            . '), jadi rak tidak bisa dihapus. Nonaktifkan rak, atau hapus lokasi yang kosong satu per satu.');
+    }
+    tx(fn() => hapus_lokasi($ids));
+    return ['ok' => true, 'dihapus' => count($ids)];
+});
+
 // ─── Scan: kode bisa berupa kode rak atau SKU barang ────
 route('GET', '/scan/:kode', function ($a) {
     auth();

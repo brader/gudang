@@ -189,6 +189,24 @@ textarea.inp { resize: vertical; min-height: 60px; }
   </div>
 </div>
 
+<!-- MODAL: Edit rak -->
+<div id="modal-rak-edit" class="modal-bg">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-h"><span id="mre-title">Edit Rak</span><button class="btn-x" onclick="closeModal('modal-rak-edit')">×</button></div>
+    <div class="modal-b">
+      <div class="field"><label class="req">Kode Rak</label><input id="mre-rak" class="inp mono" autocapitalize="characters" oninput="updateRakEditPreview()"></div>
+      <div id="mre-preview" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="mre-aktif"> Rak aktif (semua lokasinya)</label>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Rak hanya bisa dinonaktifkan jika sudah kosong.</div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-d" style="margin-right:auto" onclick="hapusRak(this)">🗑 Hapus Rak</button>
+      <button class="btn btn-o" onclick="closeModal('modal-rak-edit')">Batal</button>
+      <button class="btn btn-p" onclick="saveRakEdit(this)">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: User -->
 <div id="modal-user" class="modal-bg">
   <div class="modal">
@@ -266,16 +284,16 @@ textarea.inp { resize: vertical; min-height: 60px; }
 
 <div id="toast"></div>
 
-<script src="js/vendor/qrcode.js?v=1.5"></script>
-<script src="js/app.js?v=1.5"></script>
-<script src="js/dashboard.js?v=1.5"></script>
-<script src="js/barang.js?v=1.5"></script>
-<script src="js/lokasi.js?v=1.5"></script>
-<script src="js/gudang.js?v=1.5"></script>
-<script src="js/transaksi.js?v=1.5"></script>
-<script src="js/stok.js?v=1.5"></script>
-<script src="js/opname.js?v=1.5"></script>
-<script src="js/pengaturan.js?v=1.5"></script>
+<script src="js/vendor/qrcode.js?v=1.6"></script>
+<script src="js/app.js?v=1.6"></script>
+<script src="js/dashboard.js?v=1.6"></script>
+<script src="js/barang.js?v=1.6"></script>
+<script src="js/lokasi.js?v=1.6"></script>
+<script src="js/gudang.js?v=1.6"></script>
+<script src="js/transaksi.js?v=1.6"></script>
+<script src="js/stok.js?v=1.6"></script>
+<script src="js/opname.js?v=1.6"></script>
+<script src="js/pengaturan.js?v=1.6"></script>
 <script>boot();</script>
 </body>
 </html>

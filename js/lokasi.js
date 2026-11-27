@@ -26,7 +26,9 @@ async function loadLokasi() {
     list.forEach(l => (tingkat[l.tingkat] ??= []).push(l));
     return `<div class="card" style="margin-bottom:14px">
       <div class="card-h">Rak ${escHtml(rak)}${multiGudang() ? ` <span class="badge" style="background:#eff6ff;color:var(--primary)">${escHtml(list[0].gudang)}</span>` : ''} <span style="font-weight:400;color:var(--muted);font-size:12.5px">${list.length} lokasi · ${list.filter(l => Number(l.jml_barang) > 0).length} terisi</span>
-        <label style="margin-left:auto;font-weight:400;font-size:12.5px;display:flex;gap:6px;align-items:center"><input type="checkbox" onchange="document.querySelectorAll('.cb-rak-${escHtml(cb)}').forEach(c=>c.checked=this.checked)"> pilih semua</label></div>
+        ${list.every(l => !Number(l.aktif)) ? '<span class="badge" style="background:#f1f5f9;color:#64748b">Nonaktif</span>' : ''}
+        <label style="margin-left:auto;font-weight:400;font-size:12.5px;display:flex;gap:6px;align-items:center"><input type="checkbox" onchange="document.querySelectorAll('.cb-rak-${escHtml(cb)}').forEach(c=>c.checked=this.checked)"> pilih semua</label>
+        ${isAdmin() ? `<button class="btn btn-o btn-sm" onclick="openRakEdit('${escHtml(key)}')">✏️ Edit</button>` : ''}</div>
       <div class="card-b" style="display:flex;flex-direction:column-reverse;gap:8px">
         ${Object.entries(tingkat).map(([t, ls]) => `<div style="display:flex;gap:8px;align-items:stretch">
           <div style="width:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">T${t}</div>
@@ -79,6 +81,71 @@ async function generateRak(btn) {
   } catch (e) { toast(e.message, true); }
 }
 
+// ─── Edit / hapus satu rak (semua lokasinya) ─────────────
+let RAK_EDIT = null;
+
+function openRakEdit(key) {
+  const list = LOKASI_LIST.filter(l => l.gudang_id + '|' + l.rak === key);
+  if (!list.length) return;
+  const g = META.gudang.find(x => String(x.id) === String(list[0].gudang_id));
+  RAK_EDIT = { gudang_id: list[0].gudang_id, rak: list[0].rak, awalan: g?.awalan || '', list };
+  document.getElementById('mre-title').textContent = `Edit Rak ${list[0].rak}${multiGudang() ? ' · ' + list[0].gudang : ''}`;
+  setVal('mre-rak', list[0].rak);
+  document.getElementById('mre-aktif').checked = list.some(l => Number(l.aktif));
+  updateRakEditPreview();
+  openModal('modal-rak-edit');
+}
+
+function updateRakEditPreview() {
+  const baru = val('mre-rak').toUpperCase();
+  const el = document.getElementById('mre-preview');
+  if (!RAK_EDIT || !baru || baru === RAK_EDIT.rak) { el.innerHTML = `${RAK_EDIT?.list.length || 0} lokasi di rak ini.`; return; }
+  const contoh = RAK_EDIT.list[0];
+  const pad = n => String(n).padStart(2, '0');
+  const pre = RAK_EDIT.awalan ? RAK_EDIT.awalan + '-' : '';
+  el.innerHTML = `Kode ${RAK_EDIT.list.length} lokasi berubah, mis. <span class="mono">${escHtml(contoh.kode)}</span> → <span class="mono">${escHtml(pre + baru + '-' + pad(contoh.tingkat) + '-' + pad(contoh.slot))}</span>.
+    <b style="color:var(--warning)">Label rak harus dicetak ulang.</b> Riwayat transaksi tetap tersimpan.`;
+}
+
+async function saveRakEdit(btn) {
+  const baru = val('mre-rak').toUpperCase();
+  const aktif = document.getElementById('mre-aktif').checked;
+  if (baru !== RAK_EDIT.rak && !confirm(`Ganti kode rak ${RAK_EDIT.rak} menjadi ${baru}? Label lama tidak bisa di-scan lagi dan harus dicetak ulang.`)) return;
+  try {
+    await withBtn(btn, () => api(`/rak/${RAK_EDIT.gudang_id}/${encodeURIComponent(RAK_EDIT.rak)}`, 'PUT', { rak_baru: baru, aktif }));
+    closeModal('modal-rak-edit');
+    toast('Rak disimpan' + (baru !== RAK_EDIT.rak ? '. Jangan lupa cetak ulang labelnya.' : ''));
+    if (baru !== RAK_EDIT.rak && LOKASI_F.rak === RAK_EDIT.rak) LOKASI_F.rak = baru;
+    invalidateRef();
+    await loadMeta();
+    renderLokasi();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function hapusRak(btn) {
+  if (!confirm(`Hapus rak ${RAK_EDIT.rak} beserta ${RAK_EDIT.list.length} lokasinya? Hanya bisa jika rak belum pernah dipakai.`)) return;
+  try {
+    const r = await withBtn(btn, () => api(`/rak/${RAK_EDIT.gudang_id}/${encodeURIComponent(RAK_EDIT.rak)}`, 'DELETE'));
+    closeModal('modal-rak-edit');
+    toast(`Rak ${RAK_EDIT.rak} dihapus (${r.dihapus} lokasi)`);
+    if (LOKASI_F.rak === RAK_EDIT.rak) LOKASI_F.rak = '';
+    invalidateRef();
+    await loadMeta();
+    renderLokasi();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function hapusLokasi(id, kode, btn) {
+  if (!confirm(`Hapus lokasi ${kode}? Hanya bisa jika lokasi ini belum pernah dipakai.`)) return;
+  try {
+    await withBtn(btn, () => api('/lokasi/' + id, 'DELETE'));
+    toast(`Lokasi ${kode} dihapus`);
+    invalidateRef();
+    await loadMeta();
+    navigate('lokasi');
+  } catch (e) { toast(e.message, true); }
+}
+
 async function renderLokasiDetail(id) {
   const l = await api('/lokasi/' + id);
   window._lokasi = l;
@@ -92,7 +159,8 @@ async function renderLokasiDetail(id) {
         ${isAdmin() ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <input id="ld-ket" class="inp" style="max-width:280px" placeholder="Keterangan (mis. khusus bahan baku)" value="${escHtml(l.keterangan || '')}">
           <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="ld-aktif" ${Number(l.aktif) ? 'checked' : ''}> Aktif</label>
-          <button class="btn btn-o btn-sm" onclick="saveLokasi(${l.id}, this)">Simpan</button></div>`
+          <button class="btn btn-o btn-sm" onclick="saveLokasi(${l.id}, this)">Simpan</button>
+          <button class="btn btn-d btn-sm" onclick="hapusLokasi(${l.id}, '${escHtml(l.kode)}', this)">🗑 Hapus</button></div>`
           : `<div style="font-size:13px">${escHtml(l.keterangan || '')}</div>`}
       </div>
       <button class="btn btn-o btn-sm" onclick="printLabels([{kode:_lokasi.kode,judul:_lokasi.kode,sub:'Rak '+_lokasi.rak}])">🏷 Cetak Label</button>
